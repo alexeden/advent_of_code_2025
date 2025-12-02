@@ -1,4 +1,4 @@
-use day1::{Direction, Turn, turn_left};
+use day1::{Direction, Turn, turn_left, turn_right};
 use std::{
     env,
     fs::File,
@@ -16,7 +16,7 @@ fn main() {
         .fold((50_u16, 0), |(d, zeros), Turn(direction, steps)| {
             let next = match direction {
                 Direction::Left => turn_left(d, steps),
-                Direction::Right => day1::turn_right(d, steps),
+                Direction::Right => turn_right(d, steps),
             };
             (next, zeros + if next == 0 { 1 } else { 0 })
         });
