@@ -1,93 +1,86 @@
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct Dial {
-    value: u16,
-    /// Track the number of times the dial has hit zero
-    zeros: u16,
-}
-impl Dial {
-    pub fn new(value: u16) -> Self {
-        Self { value, zeros: 0 }
+use std::{
+    env,
+    fs::File,
+    io::{BufRead, BufReader},
+    ops::{Add, Sub},
+};
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+struct Dial(u16);
+
+impl Add<u16> for Dial {
+    type Output = Dial;
+    fn add(self, rhs: u16) -> Self::Output {
+        Dial((self.0 + rhs) % 100)
     }
 }
 
-impl Dial {
-    pub fn apply_turn(self, r: Turn) -> Self {
-        let value = match r {
-            Turn::Left(x) => (self.value + (100 - x)) % 100,
-            Turn::Right(x) => (self.value + x) % 100,
-        };
-
-        Self {
-            value,
-            zeros: self.zeros + if value == 0 { 1 } else { 0 },
-        }
-    }
-
-    pub fn zeros(&self) -> u16 {
-        self.zeros
+impl Sub<u16> for Dial {
+    type Output = Dial;
+    fn sub(self, rhs: u16) -> Self::Output {
+        Dial((self.0 + 100 - (rhs) % 100) % 100)
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Turn {
-    Left(u16),
-    Right(u16),
+struct Turn(Direction, u16);
+
+enum Direction {
+    Left,
+    Right,
 }
 
 impl TryFrom<&str> for Turn {
     type Error = anyhow::Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let (direction, steps) = value.split_at(1);
-        let steps: u16 = steps.parse()?;
-        match direction {
-            "L" => Ok(Turn::Left(steps)),
-            "R" => Ok(Turn::Right(steps)),
-            _ => Err(anyhow::anyhow!("Invalid direction {}", direction)),
-        }
+        let (dir, steps) = value.split_at(1);
+        let dir = match dir {
+            "L" => Direction::Left,
+            "R" => Direction::Right,
+            _ => return Err(anyhow::anyhow!("Invalid direction {}", dir)),
+        };
+        Ok(Self(dir, steps.parse()?))
     }
 }
 
-// impl From<Turn> for i16 {
-//     fn from(value: Turn) -> Self {
-//         match value {
-//             Turn::Left(v) => 0i16 - v as i16,
-//             Turn::Right(v) => v as i16,
-//         }
-//     }
-// }
-
 fn main() {
-    let turns: Vec<Turn> = vec![];
+    let path = env::args().nth(1).expect("Input file path is required");
+    let file = File::open(path).expect("Failed to open file");
 
-    let dial: Dial = turns
-        .into_iter()
-        .fold(Dial::new(0), |d, turn| d.apply_turn(turn));
+    let (_, password): (Dial, u16) = BufReader::new(file)
+        .lines()
+        .map_while(Result::ok)
+        .map(|l| Turn::try_from(l.as_str()).expect("Invalid turn: {l}"))
+        .fold((Dial(50), 0), |(d, zeros), Turn(direction, steps)| {
+            let next = match direction {
+                Direction::Left => d - steps,
+                Direction::Right => d + steps,
+            };
+            (next, zeros + if next.0 == 0 { 1 } else { 0 })
+        });
 
-    println!("Hello, world!");
+    println!("Password: {}", password);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // #[test]
-    // fn turn_dial_right() {
-    //     assert_eq!(Dial::new(0), Dial::new(0).apply_turn(Turn::Right(100)));
-    //     assert_eq!(Dial::new(1), Dial::new(0).apply_turn(Turn::Right(101)));
-    //     assert_eq!(Dial::new(99), Dial::new(0).apply_turn(Turn::Right(99)));
-    // }
-
-    // #[test]
-    // fn turn_dial_left() {
-    //     assert_eq!(Dial::new(0), Dial::new(0).apply_turn(Turn::Left(100)));
-    //     assert_eq!(Dial::new(99), Dial::new(0).apply_turn(Turn::Left(1)));
-    //     assert_eq!(Dial::new(99), Dial::new(99).apply_turn(Turn::Left(100)));
-    // }
+    #[test]
+    fn turn_dial_right() {
+        assert_eq!(Dial(0) + 100, Dial(0));
+        assert_eq!(Dial(0) + 101, Dial(1));
+        assert_eq!(Dial(0) + 99, Dial(99));
+        assert_eq!(Dial(50) + 50, Dial(0));
+        assert_eq!(Dial(25) + 1050, Dial(75));
+    }
 
     #[test]
-    fn test_rotation_try_from() {
-        assert_eq!(Turn::try_from("L50").unwrap(), Turn::Left(50));
-        assert_eq!(Turn::try_from("R50").unwrap(), Turn::Right(50));
+    fn turn_dial_left() {
+        assert_eq!(Dial(0) - 100, Dial(0));
+        assert_eq!(Dial(0) - 101, Dial(99));
+        assert_eq!(Dial(0) - 99, Dial(1));
+        assert_eq!(Dial(50) - 50, Dial(0));
+        assert_eq!(Dial(25) - 1050, Dial(75));
     }
 }
